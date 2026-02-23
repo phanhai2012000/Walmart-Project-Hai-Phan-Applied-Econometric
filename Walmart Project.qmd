@@ -1,0 +1,113 @@
+---
+title: "Walmart Project"
+author: "Hai Phan"
+format: docx
+editor: visual
+---
+
+## Research Question
+
+Average temperatures have been rising over time. In the short term, Wal-Mart is curious whether this might hurt its sales. **In these stores, do higher temperatures causally affect sales?**
+
+## Data
+
+The CSV file Walmart_Sales.csv contains sales data for 45 Walmart stores from February 2010 through October 2012. This data contains the columns:
+
+Store: the store number
+
+Date: the week of the sale in day-month-year format
+
+Weekly_Sales: the sales for the given store in the given week
+
+Holiday_Flag: whether the week is a special holiday week (1) or not
+
+Temperature: the average temperature in the region (in Fahrenheit)
+
+Fuel_Price: the cost of fuel in the region (in dollars per gallon)
+
+CPI: the consumer price index
+
+Unemployment: the unemployment rate in the region
+
+I chose Weekly_Sales as the outcome and Temperature as the main explanatory variable. I also identified controls: Holiday_Flag, Fuel_Price, CPI, Unemployment, and I planned to use store fixed effects to reduce bias from differences across stores.
+
+## Running Code
+
+```{r}
+library(lubridate)
+library(ggplot2)
+library(lmtest)
+library(sandwich)
+```
+
+-   **Step 1: Load the data**
+
+I imported the dataset into R using `read.csv("Walmart_Sales.csv")`.
+
+-   **Step 2: Quick check**
+
+I checked the dataset structure to make sure the variables loaded correctly.
+
+I first converted Date from text to a real date format so the timeline is handled correctly. Then I converted Store to a factor so I could include store fixed effects, which compares changes within the same store over time instead of across different stores. Finally, I converted Holiday_Flag to a factor because it is a 0/1 indicator, making it easier to model and interpret in the regression.
+
+```{r}
+Walmart_Sales <- read.csv("Walmart_Sales.csv")
+Walmart_Sales$Date <- dmy(Walmart_Sales$Date)
+Walmart_Sales$Store <- factor(Walmart_Sales$Store)
+Walmart_Sales$Holiday_Flag <- factor(Walmart_Sales$Holiday_Flag)
+```
+
+-   **Step 3: Exploratory plot (visual check)**
+
+The scatter plot with a fitted linear trend suggests a slightly negative relationship between temperature and weekly sales. Sales tend to decrease modestly as temperature rises. However, the points are widely dispersed, indicating substantial variation in sales at any given temperature level. This pattern is consistent with the fact that the data pool many stores and weeks, and weekly sales are influenced by multiple factors beyond temperature; therefore, the plot is descriptive and motivates the need for regression controls and store fixed effects.
+
+```{r}
+ggplot(Walmart_Sales, aes(x = Temperature, y = Weekly_Sales)) +
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "Weekly Sales vs Temperature", x = "Temperature", y = "Weekly Sales")
+```
+
+-   **Step 4: Regression Models**
+
+I estimated three regressions to see how the temperature effect changes as I control for more confounding factors:
+
+**Model 1 (baseline):** Weekly Sales \~ Temperature
+
+```{r}
+m1 <- lm(Weekly_Sales ~ Temperature, data = Walmart_Sales)
+```
+
+**Model 2 (with controls):** Weekly_Sales \~ Temperature + Holiday_Flag + Fuel_Price + CPI + Unemployment
+
+```{r}
+m2 <- lm(Weekly_Sales ~ Temperature + Holiday_Flag + Fuel_Price + CPI + Unemployment, data = Walmart_Sales)
+```
+
+**Model 3 (store fixed effects):** Weekly_Sales \~ Temperature + Holiday_Flag + Fuel_Price + CPI + Unemployment + Store
+
+```{r}
+m3 <- lm(Weekly_Sales ~ Temperature + Holiday_Flag + Fuel_Price + CPI + Unemployment + Store, data = Walmart_Sales)
+```
+
+```{r}
+coef(m1)["Temperature"]
+coef(m2)["Temperature"]
+summary(m3)$coefficients["Temperature", ]
+```
+
+Model 3 is the preferred model because adding store fixed effects removes stable differences across stores, such as store size, location, or typical customer base. This means the temperature effect is identified from changes within the same store over time rather than differences between stores. Even with fixed effects, the estimate could still be influenced by other factors that change over time and are related to both temperature and sales, so controls are still useful. One remaining concern is that sales may follow seasonal patterns that move with temperature, so adding month or week fixed effects from Date would be a useful robustness check.
+
+After estimating Model 3, the temperature coefficient is negative and statistically significant, which means higher temperature is associated with lower weekly sales in the data. Because the same store appears many times across weeks, errors may be correlated within a store over time. To avoid overstating significance, standard errors are clustered by store. After clustering, the temperature result remains significant with a p-value of 0.005, so the conclusion does not depend on unadjusted standard errors.
+
+```{r}
+getwd()
+```
+
+-   **Step 5: Conclusion**
+
+Overall, the results suggest that higher temperatures are linked to lower weekly sales in this Walmart dataset. In the preferred model with controls and store fixed effects, the temperature coefficient is about -834. This means that when the temperature increases by one degree Fahrenheit, weekly sales in the same store are associated with about 834 dollars lower sales on average, after accounting for the other variables in the model. This estimate comes from comparing each store to itself over time after accounting for holidays and local economic conditions. This result stays statistically significant when using standard errors clustered by store, which is more appropriate because the data contain repeated weekly observations for the same stores.
+
+At the same time, a causal claim still depends on an important assumption. Even with store fixed effects and the included controls, other factors could change over time within a store and move with temperature while also affecting sales. For example, local events, seasonal shopping habits, or store promotions might change at the same time as the weather. Because of these possible time-varying factors, the findings provide clear evidence of a negative relationship and are consistent with a causal effect, but they should still be interpreted with caution.
+
+No log transformation was used because weekly sales are already measured in dollars, so the results are easy to read as dollar changes. A log model is usually more helpful when sales have extreme outliers or when the goal is to describe percent changes. In this project, the linear model provides a clear baseline, and a log version would only be added if the sales distribution looks highly skewed.
